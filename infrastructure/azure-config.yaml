@@ -1,0 +1,81 @@
+# Run from the repo root with the `pymc-ray` env (Ray 2.59, Python 3.13). Ray doesn't expand env
+# vars, so render the subscription in first; naming the variable keeps envsubst off `$HOME` below.
+#   export AZURE_SUBSCRIPTION_ID=...  # or $(az account show --query id -o tsv) for the active one
+#   envsubst '$AZURE_SUBSCRIPTION_ID' < infrastructure/azure-config.yaml > infrastructure/azure-config.rendered.yaml
+#   ray up -y infrastructure/azure-config.rendered.yaml
+cluster_name: ray-cluster
+
+max_workers: 2
+upscaling_speed: 1.0
+
+provider:
+  type: azure
+  location: eastus2
+  resource_group: ray-cluster-rg
+  # Required: without it Ray reads the az CLI profile via an API removed in azure-cli-core 2.21.
+  subscription_id: ${AZURE_SUBSCRIPTION_ID}
+  cache_stopped_nodes: false
+
+# No key paths: Ray >= 2.5x generates a keypair for this cluster.
+auth:
+  ssh_user: ubuntu
+
+# 3 x F16as_v6: 16 vCPUs each, one physical core per vCPU (Fasv6 family quota: 48).
+available_node_types:
+  ray.head.default:
+    # 12 of the head's 16 cores go to Ray (see head_start_ray_commands); 4 stay free for the
+    # PyMC chain processes, which run on the head.
+    resources: {"CPU": 12}
+    node_config:
+      azure_arm_parameters:
+        vmSize: Standard_F16as_v6
+        imagePublisher: Canonical
+        imageOffer: 0001-com-ubuntu-server-jammy
+        imageSku: 22_04-lts-gen2
+        imageVersion: latest
+        enableAcceleratedNetworking: true
+
+  ray.worker.default:
+    min_workers: 2
+    max_workers: 2
+    resources: {"CPU": 16}
+    node_config:
+      azure_arm_parameters:
+        vmSize: Standard_F16as_v6
+        imagePublisher: Canonical
+        imageOffer: 0001-com-ubuntu-server-jammy
+        imageSku: 22_04-lts-gen2
+        imageVersion: latest
+        enableAcceleratedNetworking: true
+
+head_node_type: ray.head.default
+
+# The repo is copied to every node and installed editable; rerun `ray up` to resync.
+file_mounts:
+  ~/pymc-ray: .
+rsync_exclude:
+  - "**/.git"
+  - "**/.git/**"
+rsync_filter:
+  - .gitignore
+
+setup_commands:
+  # PyTensor's C backend needs g++; wait out first-boot apt activity first.
+  - sudo cloud-init status --wait > /dev/null; sudo apt-get -o DPkg::Lock::Timeout=600 update -q && sudo apt-get -o DPkg::Lock::Timeout=600 install -y -q g++
+  - test -x ~/.local/bin/uv || curl -LsSf https://astral.sh/uv/install.sh | sh
+  - test -d ~/venv || ~/.local/bin/uv venv --python 3.13 ~/venv
+  - grep -q venv/bin/activate ~/.bashrc || echo 'source ~/venv/bin/activate' >> ~/.bashrc
+  # Pin to the local pymc-ray env so the cluster matches the laptop. `pip` because Ray clones
+  # this venv for a runtime_env with "pip" and runs pip inside the clone; uv venvs have none.
+  - ~/.local/bin/uv pip install --python ~/venv/bin/python pip "ray[default]==2.59.0" "pymc==6.3.2" "pytensor==3.3.4" -e "$HOME/pymc-ray[test]"
+
+# The head launches workers itself, so it needs the Azure SDK (pins from Ray 2.59's defaults).
+head_setup_commands:
+  - ~/.local/bin/uv pip install --python ~/venv/bin/python azure-core==1.35.0 azure-identity==1.23.1 azure-mgmt-compute==35.0.0 azure-mgmt-network==29.0.0 azure-mgmt-resource==24.0.0 azure-common==1.1.28 msrest==0.7.1 msrestazure==0.6.4.post1
+
+worker_setup_commands: []
+
+# Ray 2.59's default, plus --num-cpus to keep 4 head cores out of Ray's scheduling.
+head_start_ray_commands:
+  - ray stop
+  - ulimit -n 65536; ray start --head --num-cpus=12 --port=6379 --object-manager-port=8076 --autoscaling-config=~/ray_bootstrap_config.yaml --dashboard-host=0.0.0.0
