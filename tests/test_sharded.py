@@ -149,6 +149,40 @@ def test_chain_processes_get_env_vars_before_connecting(regression_data):
     assert env["PYMC_RAY_A"] == "model"
 
 
+def _assert_same_density_in_this_process(model_bytes: bytes, model_fn, data) -> None:
+    assert_same_density(cloudpickle.loads(model_bytes), model_fn(data))
+
+
+@pytest.fixture(scope="module")
+def chain_process():
+    """A spawned process that stands in for a PyMC chain process. It is shared because starting one is slow."""
+    with multiprocessing.get_context("spawn").Pool(1) as pool:
+        yield pool
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "setup",
+    [
+        pytest.param({"n_shards": 2}, id="shards"),
+        pytest.param({"n_shards": 1, "n_replicas": 2}, id="replicas"),
+        pytest.param({"n_shards": 2, "n_replicas": 2, "relays": True}, id="relays"),
+    ],
+)
+def test_chain_process_density_is_exact(regression_data, setup, chain_process):
+    """A spawned chain process must compute exactly the full-data density.
+
+    The multiprocess sampling tests only check that the chains come back. This test checks the values
+    that a chain process computes, so a chain that reached the wrong actors or lost a shard fails it.
+    """
+    with pmr.ShardedModel(regression_model, regression_data, **setup) as sharded:
+        # Checking here first takes replica 0, so with replicas the chain process leases replica 1.
+        assert_same_density(sharded.model, regression_model(regression_data))
+        # PyMC pickles the step method, which holds the sharded model's client, into each chain process.
+        model_bytes = cloudpickle.dumps(sharded.model)
+        chain_process.apply(_assert_same_density_in_this_process, (model_bytes, regression_model, regression_data))
+
+
 @pytest.mark.slow
 def test_sample_multiprocess(regression_data):
     with pmr.ShardedModel(regression_model, regression_data, n_shards=2) as sharded:
