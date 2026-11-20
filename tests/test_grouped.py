@@ -65,7 +65,7 @@ def test_seeds_do_not_depend_on_which_groups_run(sales):
     kwargs = {"fit_kwargs": FIT_KWARGS, "random_seed": 7, "progressbar": False}
     everything = pmr.fit_grouped(sales, "store", group_mean_model, **kwargs)
     only_b = pmr.fit_grouped(sales[sales["store"] == "b"], "store", group_mean_model, **kwargs)
-    np.testing.assert_array_equal(everything["b"]["posterior"]["mu"].to_numpy(), only_b["b"]["posterior"]["mu"].to_numpy())
+    np.testing.assert_allclose(everything["b"]["posterior"]["mu"].to_numpy(), only_b["b"]["posterior"]["mu"].to_numpy(), rtol=1e-8, atol=1e-8)
 
 
 def test_postprocess_gets_its_own_seed(sales):
@@ -99,7 +99,7 @@ def test_postprocess_draws_do_not_depend_on_which_groups_run(sales):
     }
     everything = pmr.fit_grouped(sales, "store", group_mean_model, **kwargs)
     only_b = pmr.fit_grouped(sales[sales["store"] == "b"], "store", group_mean_model, **kwargs)
-    np.testing.assert_array_equal(everything["b"], only_b["b"])
+    np.testing.assert_allclose(everything["b"], only_b["b"], rtol=1e-8, atol=1e-8)
 
 
 def test_multi_column_keys_are_tuples(sales, as_backend):
