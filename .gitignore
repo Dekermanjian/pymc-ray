@@ -13,3 +13,6 @@ dist/
 *.zarr/
 infrastructure/*.rendered.yaml
 presentations/*.html
+docs/_build/
+docs/generated/
+docs/tutorials/*.ipynb

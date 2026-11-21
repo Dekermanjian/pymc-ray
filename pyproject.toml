@@ -31,6 +31,11 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest>=8", "polars", "nutpie>=0.16.10"]
 dev = ["pytest>=8", "polars", "nutpie>=0.16.10", "ruff", "pre-commit", "matplotlib", "h5netcdf", "h5py", "ray[default]"]
+docs = ["sphinx>=8", "pydata-sphinx-theme", "numpydoc", "myst-nb", "sphinx-copybutton", "sphinxcontrib-mermaid"]
+
+[project.urls]
+Documentation = "https://pymc-ray.readthedocs.io"
+Repository = "https://github.com/Dekermanjian/pymc-ray"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pymc_ray"]
