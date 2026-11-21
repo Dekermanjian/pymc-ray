@@ -69,3 +69,20 @@ jobs:
         run: uv pip install --system ".[test]"
       - name: Run the slow tests
         run: pytest -m slow -ra
+
+  docs:
+    name: Docs (Sphinx)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v10.4.0
+        with:
+          cache-dependency-glob: pyproject.toml
+      - name: Install the package with its documentation dependencies
+        run: uv pip install --system ".[docs]"
+      - name: Build the documentation, treating warnings as errors
+        run: sphinx-build -W --keep-going -b html docs docs/_build/html
